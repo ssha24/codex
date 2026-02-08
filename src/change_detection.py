@@ -13,6 +13,10 @@ try:
     import rasterio
 except ImportError:  # pragma: no cover - optional dependency for GeoTIFF
     rasterio = None
+try:
+    import torch
+except ImportError:  # pragma: no cover - optional dependency for deep learning
+    torch = None
 
 from PIL import Image
 
@@ -89,4 +93,50 @@ def detect_change(
     normalized_b = normalize(image_b)
     change_score = compute_change_score(normalized_a, normalized_b)
     change_map, _ = threshold_change(change_score, threshold)
+    return ChangeDetectionResult(change_score=change_score, change_map=change_map)
+
+
+def _require_torch() -> None:
+    if torch is None:  # pragma: no cover - exercised in optional test
+        raise RuntimeError("PyTorch is required for deep learning change detection.")
+
+
+def _prepare_deeplearning_input(image_a: np.ndarray, image_b: np.ndarray) -> "torch.Tensor":
+    normalized_a = normalize(image_a)
+    normalized_b = normalize(image_b)
+    stacked = np.stack([normalized_a, normalized_b], axis=0)
+    tensor = torch.from_numpy(stacked).unsqueeze(0)
+    return tensor
+
+
+def _extract_change_score(output: "torch.Tensor") -> np.ndarray:
+    if output.ndim == 4:
+        output = output.squeeze(0)
+    if output.ndim == 3 and output.shape[0] > 1:
+        output = torch.softmax(output, dim=0)[1]
+    elif output.ndim == 3:
+        output = output[0]
+    elif output.ndim != 2:
+        raise ValueError("Model output must be 2D or 3D with channel dimension.")
+    return output.detach().cpu().numpy().astype(np.float32)
+
+
+def detect_change_deeplearning(
+    image_a: np.ndarray,
+    image_b: np.ndarray,
+    model_path: str | Path,
+    *,
+    device: str = "cpu",
+    threshold: float = 0.5,
+) -> ChangeDetectionResult:
+    """Run change detection using a TorchScript model."""
+
+    _require_torch()
+    model = torch.jit.load(str(model_path), map_location=device)
+    model.eval()
+    tensor = _prepare_deeplearning_input(image_a, image_b).to(device)
+    with torch.no_grad():
+        output = model(tensor)
+    change_score = _extract_change_score(output)
+    change_map = (change_score >= threshold).astype(np.uint8)
     return ChangeDetectionResult(change_score=change_score, change_map=change_map)

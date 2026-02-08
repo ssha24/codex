@@ -39,6 +39,23 @@ python -m src.cli \
 
 The output is a single-band PNG where white (255) means change detected and black (0) means no change.
 
+## Run with a deep learning model
+
+Provide a TorchScript model that accepts a tensor shaped `(1, 2, H, W)` (stacked normalized images) and returns
+either a single-channel change probability map or a two-channel softmax output.
+
+```bash
+python -m src.cli \
+  --image-a data/before.tif \
+  --image-b data/after.tif \
+  --output change_map.png \
+  --model-path models/change_detector.pt \
+  --model-device cpu \
+  --threshold 0.5
+```
+
+Install PyTorch separately (for example, `pip install torch`) to enable the deep learning path.
+
 ## Notes
 
 - Images must be co-registered (same projection/extent) for meaningful results.

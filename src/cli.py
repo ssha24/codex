@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from src.change_detection import detect_change, load_image, threshold_change
+from src.change_detection import detect_change, detect_change_deeplearning, load_image, threshold_change
 
 
 def save_change_map(change_map: np.ndarray, output_path: Path) -> None:
@@ -30,6 +30,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Fixed threshold for change score (defaults to Otsu).",
     )
+    parser.add_argument(
+        "--model-path",
+        default=None,
+        help="Optional TorchScript model path for deep learning change detection.",
+    )
+    parser.add_argument(
+        "--model-device",
+        default="cpu",
+        help="Torch device for the deep learning model (default: cpu).",
+    )
     return parser
 
 
@@ -40,11 +50,21 @@ def main() -> None:
     image_a = load_image(args.image_a, band=args.band)
     image_b = load_image(args.image_b, band=args.band)
 
-    result = detect_change(image_a, image_b, threshold=args.threshold)
+    if args.model_path:
+        threshold = args.threshold if args.threshold is not None else 0.5
+        result = detect_change_deeplearning(
+            image_a,
+            image_b,
+            args.model_path,
+            device=args.model_device,
+            threshold=threshold,
+        )
+    else:
+        result = detect_change(image_a, image_b, threshold=args.threshold)
 
-    if args.threshold is None:
-        _, used_threshold = threshold_change(result.change_score)
-        print(f"Computed Otsu threshold: {used_threshold:.4f}")
+        if args.threshold is None:
+            _, used_threshold = threshold_change(result.change_score)
+            print(f"Computed Otsu threshold: {used_threshold:.4f}")
 
     save_change_map(result.change_map, Path(args.output))
 
